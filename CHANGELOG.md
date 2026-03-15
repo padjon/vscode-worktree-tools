@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.2.1
+
+- Add repository and package funding metadata
+
 ## 0.2.0
 
 - Rename the extension to `Worktree Tools`
