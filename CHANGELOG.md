@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.2.4
+
+- Skip clean worktrees before calling the built-in migration API
+- Avoid apparent hangs caused by built-in "no changes to migrate" notifications
+
 ## 0.2.3
 
 - Improve worktree target resolution for copied workspace settings

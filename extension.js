@@ -1,4 +1,5 @@
 const path = require('path');
+const { execFile } = require('child_process');
 const vscode = require('vscode');
 
 const COMMAND_ID = 'worktreeTools.migrateConfiguredWorktrees';
@@ -139,6 +140,12 @@ async function migrateConfiguredWorktrees() {
         log(`Migrating ${target}`);
 
         try {
+          const sourceHasChanges = await hasWorktreeChanges(target);
+          if (!sourceHasChanges) {
+            log(`Skipping ${target}: no changes to migrate`);
+            continue;
+          }
+
           await repository.migrateChanges(target, {
             confirmation: false,
             deleteFromSource: true,
@@ -330,6 +337,31 @@ function resolveConfiguredTargets(configuredTargets, availableWorktrees, reposit
 
 function normalizeFsPath(value) {
   return path.normalize(path.resolve(value));
+}
+
+async function hasWorktreeChanges(worktreePath) {
+  const stdout = await execFileText('git', [
+    '-C',
+    worktreePath,
+    'status',
+    '--porcelain=v1',
+    '--untracked-files=all'
+  ]);
+
+  return stdout.trim().length > 0;
+}
+
+async function execFileText(command, args) {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr?.trim() || error.message));
+        return;
+      }
+
+      resolve(stdout);
+    });
+  });
 }
 
 function asErrorMessage(error) {
