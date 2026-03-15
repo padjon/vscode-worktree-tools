@@ -193,7 +193,11 @@ async function getGitApi() {
     return undefined;
   }
 
-  const gitExtension = extension.isActive ? extension : await extension.activate();
+  if (!extension.isActive) {
+    await extension.activate();
+  }
+
+  const gitExtension = extension.exports;
   if (!gitExtension || typeof gitExtension.getAPI !== 'function') {
     await vscode.window.showErrorMessage('The built-in Git API could not be loaded.');
     return undefined;

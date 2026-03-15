@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.2.2
+
+- Fix loading the built-in Git API when the Git extension is already active
+
 ## 0.2.1
 
 - Add repository and package funding metadata

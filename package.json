@@ -2,7 +2,7 @@
   "name": "vscode-worktree-tools",
   "displayName": "Worktree Tools",
   "description": "Utilities for Git worktree workflows in VS Code, starting with batch migration for configured worktrees.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "padjon",
   "license": "MIT",
   "engines": {
