@@ -1,12 +1,17 @@
 {
-  "name": "vscode-git-worktree-batch-migrate",
-  "displayName": "Git Worktree Batch Migrate",
-  "description": "Run VS Code's built-in worktree migration flow for a predefined list of Git worktrees.",
-  "version": "0.1.0",
+  "name": "vscode-worktree-tools",
+  "displayName": "Worktree Tools",
+  "description": "Utilities for Git worktree workflows in VS Code, starting with batch migration for configured worktrees.",
+  "version": "0.2.0",
   "publisher": "padjon",
   "license": "MIT",
   "engines": {
     "vscode": "^1.88.0"
+  },
+  "icon": "assets/icon.png",
+  "galleryBanner": {
+    "color": "#0b5a6a",
+    "theme": "dark"
   },
   "categories": [
     "Other"
@@ -14,33 +19,36 @@
   "keywords": [
     "git",
     "worktree",
+    "worktrees",
+    "git worktree",
     "vscode",
-    "source-control"
+    "source-control",
+    "scm"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/padjon/vscode-git-worktree-batch-migrate.git"
+    "url": "https://github.com/padjon/vscode-worktree-tools.git"
   },
-  "homepage": "https://github.com/padjon/vscode-git-worktree-batch-migrate#readme",
+  "homepage": "https://github.com/padjon/vscode-worktree-tools#readme",
   "bugs": {
-    "url": "https://github.com/padjon/vscode-git-worktree-batch-migrate/issues"
+    "url": "https://github.com/padjon/vscode-worktree-tools/issues"
   },
   "activationEvents": [
-    "onCommand:gitWorktreeBatch.migrateConfigured"
+    "onCommand:worktreeTools.migrateConfiguredWorktrees"
   ],
   "main": "./extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "gitWorktreeBatch.migrateConfigured",
+        "command": "worktreeTools.migrateConfiguredWorktrees",
         "title": "Migrate Configured Worktree Changes",
-        "category": "Git"
+        "category": "Worktree"
       }
     ],
     "configuration": {
-      "title": "Git Worktree Batch Migrate",
+      "title": "Worktree Tools",
       "properties": {
-        "gitWorktreeBatch.targets": {
+        "worktreeTools.migrationTargets": {
           "type": "array",
           "items": {
             "type": "string"
@@ -48,7 +56,7 @@
           "default": [],
           "markdownDescription": "Ordered list of worktrees to migrate into the current repository. Each entry may be an absolute path, a path relative to the current workspace folder, or a unique worktree folder name."
         },
-        "gitWorktreeBatch.continueOnError": {
+        "worktreeTools.continueOnMigrationError": {
           "type": "boolean",
           "default": false,
           "markdownDescription": "Continue with later configured worktrees after one migration fails. When disabled, the command stops on the first failure or merge-conflict state."

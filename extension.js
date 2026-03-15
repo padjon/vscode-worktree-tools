@@ -1,9 +1,9 @@
 const path = require('path');
 const vscode = require('vscode');
 
-const COMMAND_ID = 'gitWorktreeBatch.migrateConfigured';
-const CONFIG_NAMESPACE = 'gitWorktreeBatch';
-const OUTPUT_CHANNEL_NAME = 'Git Worktree Batch Migrate';
+const COMMAND_ID = 'worktreeTools.migrateConfiguredWorktrees';
+const CONFIG_NAMESPACE = 'worktreeTools';
+const OUTPUT_CHANNEL_NAME = 'Worktree Tools';
 const GIT_EXTENSION_ID = 'vscode.git';
 
 let outputChannel;
@@ -38,7 +38,7 @@ async function migrateConfiguredWorktrees() {
   const configuredTargets = getConfiguredTargets(repository);
   if (configuredTargets.length === 0) {
     await vscode.window.showWarningMessage(
-      'Set gitWorktreeBatch.targets in settings before running this command.'
+      'Set worktreeTools.migrationTargets in settings before running this command.'
     );
     return;
   }
@@ -106,7 +106,7 @@ async function migrateConfiguredWorktrees() {
 
   const continueOnError = vscode.workspace
     .getConfiguration(CONFIG_NAMESPACE, repository.rootUri)
-    .get('continueOnError', false);
+    .get('continueOnMigrationError', false);
 
   const summary = {
     migrated: [],
@@ -241,7 +241,7 @@ async function pickRepository(git) {
 function getConfiguredTargets(repository) {
   const values = vscode.workspace
     .getConfiguration(CONFIG_NAMESPACE, repository.rootUri)
-    .get('targets', []);
+    .get('migrationTargets', []);
 
   if (!Array.isArray(values)) {
     return [];

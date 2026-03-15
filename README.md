@@ -1,68 +1,80 @@
-# Git Worktree Batch Migrate
+# Worktree Tools
 
-Run VS Code's built-in `Git: Migrate Worktree Changes` flow for a predefined list of worktrees in one command.
+[![Install on Marketplace](https://img.shields.io/badge/Marketplace-Worktree%20Tools-0078D4?style=for-the-badge&logo=visualstudiocode&logoColor=white)](https://marketplace.visualstudio.com/items?itemName=padjon.vscode-worktree-tools)
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/padjon)
 
-This extension adds:
+Utilities for Git worktree workflows in VS Code.
 
-- `Git: Migrate Configured Worktree Changes`
+The first command in this extension is:
 
-It uses the built-in Git extension API rather than reimplementing migration logic, so the actual file migration behavior stays aligned with VS Code itself.
+- `Worktree: Migrate Configured Worktree Changes`
 
-## What It Does
+It runs VS Code's built-in `Git: Migrate Worktree Changes` behavior for a predefined list of worktrees, one after another.
 
-When you run the command, the extension:
+## Why This Exists
 
-1. Picks the current repository as the migration destination.
-2. Resolves a predefined ordered list of worktrees from your settings.
-3. Runs the same built-in migration flow for each matching worktree, one after another.
-4. Stops if a migration introduces conflicts, or on the first error unless you explicitly allow continuation.
+If you work with several linked Git worktrees, migrating changes back into one destination repository is repetitive. This extension lets you define that list once and run the sequence with a single command.
+
+The migration logic itself is not reimplemented here. `Worktree Tools` uses VS Code's built-in Git extension API so migration behavior stays aligned with core VS Code.
+
+## Features
+
+- Run the built-in worktree migration flow across multiple configured worktrees.
+- Resolve worktrees by absolute path, workspace-relative path, or unique folder name.
+- Stop on conflicts so you can resolve them immediately.
+- Optionally continue after individual migration failures.
 
 ## Configuration
 
-Add your worktrees to settings:
+Add settings like:
 
 ```json
 {
-  "gitWorktreeBatch.targets": [
+  "worktreeTools.migrationTargets": [
     "../1",
     "../3",
     "feature-a"
   ],
-  "gitWorktreeBatch.continueOnError": false
+  "worktreeTools.continueOnMigrationError": false
 }
 ```
 
-`gitWorktreeBatch.targets` supports:
+`worktreeTools.migrationTargets` supports:
 
 - absolute paths
 - paths relative to the current workspace folder
 - unique worktree folder names
 
-`gitWorktreeBatch.continueOnError` controls whether later configured worktrees should still run after a failed migration.
+`worktreeTools.continueOnMigrationError` controls whether the command should continue with later configured worktrees after one migration fails.
 
-## Typical Use Case
+## Current Behavior
 
-You keep several linked worktrees for parallel tasks and regularly want to pull changes back into one main working tree. Instead of manually running `Git: Migrate Worktree Changes` once per worktree, this extension lets you define the sequence once and run it with a single command.
+When you run `Worktree: Migrate Configured Worktree Changes`, the extension:
 
-## Behavior Notes
+1. Uses the current repository as the destination.
+2. Resolves configured worktree targets.
+3. Runs migrations sequentially.
+4. Stops if conflicts are introduced.
 
-- Migrations run sequentially, not in parallel.
-- The active repository is the destination.
-- The extension ignores configured targets that do not match a currently linked worktree.
-- If a migration produces merge conflicts, the batch stops so you can resolve them before continuing.
-- The extension depends on VS Code's built-in Git extension.
-
-## Output
-
-Detailed progress and failures are written to the `Git Worktree Batch Migrate` output channel.
+Detailed progress and failures are written to the `Worktree Tools` output channel.
 
 ## Requirements
 
 - VS Code with the built-in Git extension enabled
 - A repository with linked Git worktrees
 
+## Roadmap
+
+This extension is intended to grow into a broader toolbox for worktree workflows. Batch migration is the first command, not the final scope.
+
 ## Release Notes
+
+### 0.2.0
+
+- Rename the extension to `Worktree Tools`
+- Rename the extension id to `padjon.vscode-worktree-tools`
+- Add broader positioning for future worktree utilities
 
 ### 0.1.0
 
-Initial release.
+Initial batch migration release.
