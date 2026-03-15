@@ -80,6 +80,11 @@ async function migrateConfiguredWorktrees() {
     return;
   }
 
+  outputChannel.clear();
+  log(`Destination repository: ${repository.rootUri.fsPath}`);
+  log(`Configured targets: ${configuredTargets.join(', ')}`);
+  log(`Resolved targets: ${targets.join(', ')}`);
+
   const destinationLabel = path.basename(repository.rootUri.fsPath);
   const detailLines = [
     `Destination: ${repository.rootUri.fsPath}`,
@@ -114,8 +119,8 @@ async function migrateConfiguredWorktrees() {
     stoppedOnConflicts: null
   };
 
-  outputChannel.clear();
   log(`Starting batch migration into ${repository.rootUri.fsPath}`);
+  outputChannel.show(true);
 
   await vscode.window.withProgress(
     {
@@ -281,9 +286,11 @@ function resolveConfiguredTargets(configuredTargets, availableWorktrees, reposit
     } else {
       if (workspaceRoot) {
         candidatePaths.add(normalizeFsPath(path.resolve(workspaceRoot, target)));
+        candidatePaths.add(normalizeFsPath(path.resolve(path.dirname(workspaceRoot), target)));
       }
 
       candidatePaths.add(normalizeFsPath(path.resolve(repositoryRoot, target)));
+      candidatePaths.add(normalizeFsPath(path.resolve(path.dirname(repositoryRoot), target)));
     }
 
     const directMatch = availableWorktrees.find((worktreePath) => candidatePaths.has(worktreePath));
@@ -295,22 +302,24 @@ function resolveConfiguredTargets(configuredTargets, availableWorktrees, reposit
       continue;
     }
 
-    const basenameMatches = availableWorktrees.filter((worktreePath) => path.basename(worktreePath) === target);
-    if (basenameMatches.length === 1) {
-      const match = basenameMatches[0];
-      if (!seen.has(match)) {
-        seen.add(match);
-        matches.push(match);
+    if (!target.includes('/') && !target.includes('\\')) {
+      const basenameMatches = availableWorktrees.filter((worktreePath) => path.basename(worktreePath) === target);
+      if (basenameMatches.length === 1) {
+        const match = basenameMatches[0];
+        if (!seen.has(match)) {
+          seen.add(match);
+          matches.push(match);
+        }
+        continue;
       }
-      continue;
-    }
 
-    if (basenameMatches.length > 1) {
-      ambiguous.push({
-        target,
-        matches: basenameMatches
-      });
-      continue;
+      if (basenameMatches.length > 1) {
+        ambiguous.push({
+          target,
+          matches: basenameMatches
+        });
+        continue;
+      }
     }
 
     unmatched.push(target);

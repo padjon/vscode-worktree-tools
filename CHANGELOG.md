@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.2.3
+
+- Improve worktree target resolution for copied workspace settings
+- Avoid basename fallback for path-like targets
+- Show resolved migration targets in the output channel before the batch starts
+
 ## 0.2.2
 
 - Fix loading the built-in Git API when the Git extension is already active
