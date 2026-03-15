@@ -1,0 +1,59 @@
+{
+  "name": "vscode-git-worktree-batch-migrate",
+  "displayName": "Git Worktree Batch Migrate",
+  "description": "Run VS Code's built-in worktree migration flow for a predefined list of Git worktrees.",
+  "version": "0.1.0",
+  "publisher": "padjon",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.88.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "git",
+    "worktree",
+    "vscode",
+    "source-control"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/padjon/vscode-git-worktree-batch-migrate.git"
+  },
+  "homepage": "https://github.com/padjon/vscode-git-worktree-batch-migrate#readme",
+  "bugs": {
+    "url": "https://github.com/padjon/vscode-git-worktree-batch-migrate/issues"
+  },
+  "activationEvents": [
+    "onCommand:gitWorktreeBatch.migrateConfigured"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gitWorktreeBatch.migrateConfigured",
+        "title": "Migrate Configured Worktree Changes",
+        "category": "Git"
+      }
+    ],
+    "configuration": {
+      "title": "Git Worktree Batch Migrate",
+      "properties": {
+        "gitWorktreeBatch.targets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Ordered list of worktrees to migrate into the current repository. Each entry may be an absolute path, a path relative to the current workspace folder, or a unique worktree folder name."
+        },
+        "gitWorktreeBatch.continueOnError": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Continue with later configured worktrees after one migration fails. When disabled, the command stops on the first failure or merge-conflict state."
+        }
+      }
+    }
+  }
+}
