@@ -1,8 +1,8 @@
 {
   "name": "vscode-worktree-tools",
   "displayName": "Worktree Tools",
-  "description": "Utilities for Git worktree workflows in VS Code, starting with batch migration for configured worktrees.",
-  "version": "0.2.4",
+  "description": "Utilities for Git worktree workflows in VS Code, including batch migration and local-main sync for configured worktrees.",
+  "version": "0.3.11",
   "publisher": "padjon",
   "license": "MIT",
   "engines": {
@@ -37,15 +37,30 @@
     "type": "github",
     "url": "https://github.com/sponsors/padjon"
   },
+  "sponsor": {
+    "url": "https://github.com/sponsors/padjon"
+  },
   "activationEvents": [
-    "onCommand:worktreeTools.migrateConfiguredWorktrees"
+    "onCommand:worktreeTools.migrateConfiguredWorktrees",
+    "onCommand:worktreeTools.syncConfiguredWorktreesFromMain",
+    "onCommand:worktreeTools.prepareWorktreeSyncToMainWorkdir"
   ],
   "main": "./extension.js",
   "contributes": {
     "commands": [
       {
         "command": "worktreeTools.migrateConfiguredWorktrees",
-        "title": "Migrate Configured Worktree Changes",
+        "title": "Sync Worktrees => Main Workdir",
+        "category": "Worktree"
+      },
+      {
+        "command": "worktreeTools.syncConfiguredWorktreesFromMain",
+        "title": "Sync Main Workdir => Worktrees",
+        "category": "Worktree"
+      },
+      {
+        "command": "worktreeTools.prepareWorktreeSyncToMainWorkdir",
+        "title": "Sync Worktrees => Main Workdir (Rebase Main First)",
         "category": "Worktree"
       }
     ],
