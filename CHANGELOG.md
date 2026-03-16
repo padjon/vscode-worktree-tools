@@ -1,5 +1,15 @@
 # Change Log
 
+## 0.4.0
+
+- Add `Worktree: Initialize or Reinitialize Worktrees` to create sibling worktrees from the main workdir's current branch
+- Prompt for folder names and create or recreate matching `wt-<foldername>` branches automatically
+- Add a preview step that shows which folders will initialize versus reinitialize before execution
+- Reinitialize existing worktrees by dropping and recreating their branches while keeping gitignored files
+- Make all sync commands use the branch currently checked out in the main workdir instead of a fixed `main` branch
+- Rename the sync command titles to be explicit about the main workdir branch as the sync target or source
+- Block reinitialize when the target worktree folder or `wt-*` branch does not match the expected linked worktree pair
+
 ## 0.3.11
 
 - Change both rebase-based commands to use `git rebase --autostash refs/heads/main` so dirty worktree changes are reapplied automatically

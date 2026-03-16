@@ -1,8 +1,8 @@
 {
   "name": "vscode-worktree-tools",
   "displayName": "Worktree Tools",
-  "description": "Utilities for Git worktree workflows in VS Code, including batch migration and local-main sync for configured worktrees.",
-  "version": "0.3.11",
+  "description": "Utilities for Git worktree workflows in VS Code, including initialization, batch migration, and local-main sync for configured worktrees.",
+  "version": "0.4.0",
   "publisher": "padjon",
   "license": "MIT",
   "engines": {
@@ -41,6 +41,7 @@
     "url": "https://github.com/sponsors/padjon"
   },
   "activationEvents": [
+    "onCommand:worktreeTools.initializeWorktrees",
     "onCommand:worktreeTools.migrateConfiguredWorktrees",
     "onCommand:worktreeTools.syncConfiguredWorktreesFromMain",
     "onCommand:worktreeTools.prepareWorktreeSyncToMainWorkdir"
@@ -49,18 +50,23 @@
   "contributes": {
     "commands": [
       {
+        "command": "worktreeTools.initializeWorktrees",
+        "title": "Initialize or Reinitialize Worktrees",
+        "category": "Worktree"
+      },
+      {
         "command": "worktreeTools.migrateConfiguredWorktrees",
-        "title": "Sync Worktrees => Main Workdir",
+        "title": "Sync Worktrees => Main Workdir Branch",
         "category": "Worktree"
       },
       {
         "command": "worktreeTools.syncConfiguredWorktreesFromMain",
-        "title": "Sync Main Workdir => Worktrees",
+        "title": "Sync Main Workdir Branch => Worktrees",
         "category": "Worktree"
       },
       {
         "command": "worktreeTools.prepareWorktreeSyncToMainWorkdir",
-        "title": "Sync Worktrees => Main Workdir (Rebase Main First)",
+        "title": "Sync Worktrees => Main Workdir Branch (Rebase First)",
         "category": "Worktree"
       }
     ],
@@ -73,7 +79,7 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Ordered list of worktrees to migrate into the current repository. Each entry may be an absolute path, a path relative to the current workspace folder, or a unique worktree folder name."
+          "markdownDescription": "Ordered list of worktrees to sync into the main workdir for the selected worktree set. Each entry may be an absolute path, a path relative to the current workspace folder, or a unique worktree folder name."
         },
         "worktreeTools.continueOnMigrationError": {
           "type": "boolean",

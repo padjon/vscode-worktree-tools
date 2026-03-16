@@ -7,28 +7,47 @@ Utilities for Git worktree workflows in VS Code.
 
 Commands in this extension:
 
-- `Worktree: Sync Worktrees => Main Workdir`
-- `Worktree: Sync Main Workdir => Worktrees`
-- `Worktree: Sync Worktrees => Main Workdir (Rebase Main First)`
+- `Worktree: Initialize or Reinitialize Worktrees`
+- `Worktree: Sync Worktrees => Main Workdir Branch`
+- `Worktree: Sync Main Workdir Branch => Worktrees`
+- `Worktree: Sync Worktrees => Main Workdir Branch (Rebase First)`
 
-`Sync Worktrees => Main Workdir` runs VS Code's built-in `Git: Migrate Worktree Changes` behavior for a predefined list of worktrees, one after another.
-`Sync Main Workdir => Worktrees` rebases each configured worktree onto the local `main` branch with `--autostash`, so dirty worktree changes are reapplied afterward.
-`Sync Worktrees => Main Workdir (Rebase Main First)` first rebases selected configured worktree(s) onto the local `main` branch with `--autostash`, then runs the normal worktree-to-main-workdir sync for that same worktree when the rebase is conflict-free.
-All three commands let you choose either one configured worktree or an `All configured worktrees` entry, which is the default selection.
+`Initialize or Reinitialize Worktrees` creates or refreshes linked worktrees at `../<projectName>.worktrees/<foldername>` from the branch currently checked out in the main workdir. Each worktree uses a matching `wt-<foldername>` branch, and reinitialize keeps gitignored files.
+`Sync Worktrees => Main Workdir Branch` runs VS Code's built-in `Git: Migrate Worktree Changes` behavior for a predefined list of worktrees, one after another.
+`Sync Main Workdir Branch => Worktrees` rebases each configured worktree onto the branch currently checked out in the main workdir with `--autostash`, so dirty worktree changes are reapplied afterward.
+`Sync Worktrees => Main Workdir Branch (Rebase First)` first rebases selected configured worktree(s) onto the branch currently checked out in the main workdir with `--autostash`, then runs the normal worktree-to-main-workdir sync for that same worktree when the rebase is conflict-free.
+The sync commands let you choose either one configured worktree or an `All configured worktrees` entry, which is the default selection.
 
 ## Why This Exists
 
-If you work with several linked Git worktrees, migrating changes back into one destination repository or syncing the latest local `main` changes into each worktree is repetitive. This extension lets you define that list once and run the sequence with a single command.
+If you work with several linked Git worktrees, migrating changes back into one destination repository or syncing the latest main-workdir branch changes into each worktree is repetitive. This extension lets you define that list once and run the sequence with a single command.
 
 The migration logic itself is not reimplemented here. `Worktree Tools` uses VS Code's built-in Git extension API so migration behavior stays aligned with core VS Code.
 
 ## Features
 
-- Run the built-in worktree migration flow across multiple configured worktrees.
-- Merge the latest local `main` branch state into multiple configured worktrees.
+- Create a batch of new worktrees from the main workdir's current branch.
+- Put new worktrees under a sibling `<projectName>.worktrees` folder structure.
+- Create matching `wt-<foldername>` branches automatically.
+- Preview which folders will initialize vs reinitialize before anything changes.
+- Run the built-in worktree migration flow across multiple configured worktrees into the branch currently checked out in the main workdir.
+- Rebase multiple configured worktrees onto the branch currently checked out in the main workdir.
 - Resolve worktrees by absolute path, workspace-relative path, or unique folder name.
 - Stop on conflicts so you can resolve them immediately.
 - Optionally continue after individual migration failures.
+
+## Initialize Or Reinitialize Worktrees
+
+When you run `Worktree: Initialize or Reinitialize Worktrees`, the extension:
+
+1. Resolves the repository's main workdir.
+2. Uses the current branch checked out there as the source branch.
+3. Prompts for one or more folder names.
+4. Shows a preview that separates initialize and reinitialize targets.
+5. Creates each missing worktree at `../<projectName>.worktrees/<foldername>`.
+6. Reinitializes each existing worktree by dropping and recreating its `wt-<foldername>` branch from the main workdir branch.
+7. Keeps gitignored files during reinitialization.
+8. Refuses to reinitialize if the target folder already points to a different branch, or if a stray `wt-<foldername>` branch exists without its matching linked worktree.
 
 ## Configuration
 
@@ -55,30 +74,34 @@ Add settings like:
 
 ## Current Behavior
 
-When you run `Worktree: Sync Worktrees => Main Workdir`, the extension:
+When you run `Worktree: Sync Worktrees => Main Workdir Branch`, the extension:
 
-1. Uses the current repository as the destination.
-2. Resolves configured worktree targets.
-3. Lets you choose one configured worktree or the default `All configured worktrees` option.
-4. Runs the built-in worktree migration flow for the chosen scope.
-5. Stops if conflicts are introduced.
+1. Resolves the repository's main workdir.
+2. Uses the branch currently checked out there as the sync target.
+3. Uses the main workdir repository as the destination, even if you started from another linked worktree.
+4. Resolves configured worktree targets.
+5. Lets you choose one configured worktree or the default `All configured worktrees` option.
+6. Runs the built-in worktree migration flow for the chosen scope.
+7. Stops if conflicts are introduced.
 
-When you run `Worktree: Sync Main Workdir => Worktrees`, the extension:
+When you run `Worktree: Sync Main Workdir Branch => Worktrees`, the extension:
 
-1. Uses the current repository to resolve linked worktrees.
-2. Resolves configured worktree targets.
-3. Lets you choose one configured worktree or the default `All configured worktrees` option.
-4. Runs `git rebase --autostash refs/heads/main` for the chosen worktree scope.
-5. Stops on the first sync failure or rebase-conflict state and logs the result.
+1. Resolves the repository's main workdir.
+2. Uses the branch currently checked out there as the sync source.
+3. Resolves configured worktree targets for that worktree set.
+4. Lets you choose one configured worktree or the default `All configured worktrees` option.
+5. Runs `git rebase --autostash refs/heads/<current-branch>` for the chosen worktree scope.
+6. Stops on the first sync failure or rebase-conflict state and logs the result.
 
-When you run `Worktree: Sync Worktrees => Main Workdir (Rebase Main First)`, the extension:
+When you run `Worktree: Sync Worktrees => Main Workdir Branch (Rebase First)`, the extension:
 
-1. Uses the current repository to resolve linked worktrees.
-2. Resolves configured worktree targets.
-3. Lets you choose one configured worktree or the default `All configured worktrees` option.
-4. Runs `git rebase --autostash refs/heads/main` in each chosen worktree.
-5. If that succeeds without conflict, runs the same built-in worktree migration flow used by `Sync Worktrees => Main Workdir`.
-6. Stops on the first worktree rebase conflict so you can resolve it there before rerunning.
+1. Resolves the repository's main workdir.
+2. Uses the branch currently checked out there as the rebase source and sync target.
+3. Resolves configured worktree targets for that worktree set.
+4. Lets you choose one configured worktree or the default `All configured worktrees` option.
+5. Runs `git rebase --autostash refs/heads/<current-branch>` in each chosen worktree.
+6. If that succeeds without conflict, runs the same built-in worktree migration flow used by `Sync Worktrees => Main Workdir Branch`.
+7. Stops on the first worktree rebase conflict so you can resolve it there before rerunning.
 
 Detailed progress and failures are written to the `Worktree Tools` output channel.
 
