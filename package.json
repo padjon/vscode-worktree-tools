@@ -1,7 +1,7 @@
 {
   "name": "vscode-worktree-tools",
   "displayName": "Worktree Tools",
-  "description": "Utilities for Git worktree workflows in VS Code, including initialization, batch migration, and local-main sync for configured worktrees.",
+  "description": "Utilities for Git worktree workflows in VS Code, including initialization and main-workdir sync for linked worktrees.",
   "version": "0.4.0",
   "publisher": "padjon",
   "license": "MIT",
@@ -73,18 +73,10 @@
     "configuration": {
       "title": "Worktree Tools",
       "properties": {
-        "worktreeTools.migrationTargets": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "markdownDescription": "Ordered list of worktrees to sync into the main workdir for the selected worktree set. Each entry may be an absolute path, a path relative to the current workspace folder, or a unique worktree folder name."
-        },
         "worktreeTools.continueOnMigrationError": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Continue with later configured worktrees after one migration fails. When disabled, the command stops on the first failure or merge-conflict state."
+          "markdownDescription": "Continue with later worktrees after one migration fails. When disabled, the command stops on the first failure or merge-conflict state."
         }
       }
     }

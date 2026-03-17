@@ -10,6 +10,7 @@ const MERGE_SYNC_COMMAND_ID = 'worktreeTools.prepareWorktreeSyncToMainWorkdir';
 const CONFIG_NAMESPACE = 'worktreeTools';
 const OUTPUT_CHANNEL_NAME = 'Worktree Tools';
 const GIT_EXTENSION_ID = 'vscode.git';
+const ALL_WORKTREES_LABEL = 'All worktrees';
 let outputChannel;
 
 function activate(context) {
@@ -48,14 +49,36 @@ async function initializeWorktrees() {
   }
 
   const { mainRoot, sourceBranch, worktrees } = await getMainWorktreeContext(repository.rootUri.fsPath);
-  const folderNames = await promptForWorktreeFolderNames();
-  if (folderNames.length === 0) {
+  const linkedWorktreeTargets = getLinkedWorktreeTargets(worktrees, mainRoot);
+  const setupMode = await pickWorktreeSetupMode(linkedWorktreeTargets.length > 0);
+  if (!setupMode) {
     return;
   }
 
-  const projectName = path.basename(mainRoot);
-  const worktreesRoot = normalizeFsPath(path.resolve(mainRoot, '..', `${projectName}.worktrees`));
-  const plan = await planWorktreeSetup(mainRoot, worktreesRoot, sourceBranch, folderNames, worktrees);
+  if (setupMode === 'reinitialize' && linkedWorktreeTargets.length === 0) {
+    await vscode.window.showInformationMessage('This worktree set has no linked worktrees to reinitialize.');
+    return;
+  }
+
+  const worktreesRoot = getManagedWorktreesRoot(mainRoot);
+  const reinitializeTargets =
+    setupMode === 'reinitialize'
+      ? await pickExistingWorktreeTargets(
+          linkedWorktreeTargets,
+          'Select which existing worktrees should be reinitialized'
+        )
+      : undefined;
+  if (setupMode === 'reinitialize' && !reinitializeTargets) {
+    return;
+  }
+
+  const plan =
+    setupMode === 'initialize'
+      ? await planNewWorktreeInitialization(mainRoot, worktreesRoot, sourceBranch, worktrees)
+      : await planExistingWorktreeReinitialization(reinitializeTargets, sourceBranch, worktrees);
+  if (!plan) {
+    return;
+  }
 
   if (plan.errors.length > 0) {
     outputChannel.clear();
@@ -74,7 +97,9 @@ async function initializeWorktrees() {
   outputChannel.clear();
   log(`Main worktree: ${mainRoot}`);
   log(`Source branch: ${sourceBranch}`);
-  log(`Worktrees root: ${worktreesRoot}`);
+  if (setupMode === 'initialize') {
+    log(`Worktrees root: ${worktreesRoot}`);
+  }
   for (const item of plan.items) {
     log(`Planned: ${item.action} ${item.folderName} -> ${item.worktreePath} (${item.branchName})`);
   }
@@ -82,24 +107,42 @@ async function initializeWorktrees() {
   const initializeCount = plan.items.filter((item) => item.action === 'initialize').length;
   const reinitializeCount = plan.items.length - initializeCount;
   const actionLabel = formatInitializationActionSummary(initializeCount, reinitializeCount);
-  const previewAccepted = await showWorktreeSetupPreview(plan.items, worktreesRoot, sourceBranch);
+  const previewAccepted = await showWorktreeSetupPreview(
+    plan.items,
+    setupMode === 'initialize'
+      ? `Source branch ${sourceBranch} -> ${worktreesRoot}`
+      : `Source branch ${sourceBranch} -> selected existing worktrees`
+  );
   if (!previewAccepted) {
     return;
+  }
+
+  const detailLines = [
+    `Main worktree: ${mainRoot}`,
+    `Source branch: ${sourceBranch}`
+  ];
+
+  if (setupMode === 'initialize') {
+    detailLines.push(`Destination root: ${worktreesRoot}`);
+  }
+
+  detailLines.push(
+    'Worktrees:',
+    ...plan.items.map((item) => `- ${item.action}: ${item.folderName} -> ${item.branchName}`),
+    ''
+  );
+
+  if (setupMode === 'initialize') {
+    detailLines.push('Initialize creates sibling worktrees under the managed worktrees root.');
+  } else {
+    detailLines.push('Reinitialize resets the selected existing worktrees in place and keeps gitignored files.');
   }
 
   const confirmation = await vscode.window.showWarningMessage(
     `${actionLabel} from ${sourceBranch}?`,
     {
       modal: true,
-      detail: [
-        `Main worktree: ${mainRoot}`,
-        `Source branch: ${sourceBranch}`,
-        `Destination root: ${worktreesRoot}`,
-        'Worktrees:',
-        ...plan.items.map((item) => `- ${item.action}: ${item.folderName} -> ${item.branchName}`),
-        '',
-        'Reinitialize keeps gitignored files and recreates the branch from the main workdir branch.'
-      ].join('\n')
+      detail: detailLines.join('\n')
     },
     'Run'
   );
@@ -108,7 +151,9 @@ async function initializeWorktrees() {
     return;
   }
 
-  await fs.mkdir(worktreesRoot, { recursive: true });
+  if (setupMode === 'initialize') {
+    await fs.mkdir(worktreesRoot, { recursive: true });
+  }
 
   const summary = {
     initialized: [],
@@ -160,7 +205,9 @@ async function initializeWorktrees() {
   }
 
   await vscode.window.showInformationMessage(
-    `${formatInitializationResultSummary(summary.initialized.length, summary.reinitialized.length)} in ${worktreesRoot}.`
+    setupMode === 'initialize'
+      ? `${formatInitializationResultSummary(summary.initialized.length, summary.reinitialized.length)} in ${worktreesRoot}.`
+      : `${formatInitializationResultSummary(summary.initialized.length, summary.reinitialized.length)} from ${sourceBranch}.`
   );
 }
 
@@ -178,23 +225,21 @@ async function syncConfiguredWorktreesToCurrentRepository() {
     return;
   }
 
-  const { destinationRepository, mainRoot, sourceBranch } = await resolveMainWorktreeRepository(
+  const { destinationRepository, mainRoot, sourceBranch, worktrees } = await resolveMainWorktreeRepository(
     git,
     selectedRepository
   );
 
-  const selection = await getConfiguredWorktreeSelection(destinationRepository, {
-    emptyMessage: `Set worktreeTools.migrationTargets in settings before syncing into ${destinationRepository.rootUri.fsPath} on ${sourceBranch}.`,
-    noWorktreesMessage: `This worktree set has no linked worktrees to sync into ${destinationRepository.rootUri.fsPath} on ${sourceBranch}.`,
-    noTargetsMessage: `No configured worktrees resolved to linked worktrees other than the destination ${destinationRepository.rootUri.fsPath} on ${sourceBranch}.`
+  const availableTargets = await getLinkedWorktreeTargetsOrNotify(worktrees, mainRoot, {
+    noTargetsMessage: `This worktree set has no linked worktrees to sync into ${destinationRepository.rootUri.fsPath} on ${sourceBranch}.`
   });
-  if (!selection) {
+  if (!availableTargets) {
     return;
   }
 
-  const targets = await pickConfiguredWorktreeTargets(
-    selection.targets,
-    'Select which configured worktree changes should be synced => main workdir branch'
+  const targets = await pickExistingWorktreeTargets(
+    availableTargets,
+    'Select which existing worktree changes should be synced => main workdir branch'
   );
   if (!targets) {
     return;
@@ -204,13 +249,8 @@ async function syncConfiguredWorktreesToCurrentRepository() {
   log(`Main workdir: ${mainRoot}`);
   log(`Sync branch: ${sourceBranch}`);
   log(`Destination repository: ${destinationRepository.rootUri.fsPath}`);
-  log(`Configured targets: ${selection.configuredTargets.join(', ')}`);
-  log(`Resolved targets: ${selection.targets.join(', ')}`);
+  log(`Available targets: ${availableTargets.join(', ')}`);
   log(`Selected targets: ${targets.join(', ')}`);
-
-  if (selection.unmatched.length > 0) {
-    log(`Unmatched configured targets: ${selection.unmatched.join(', ')}`);
-  }
 
   const destinationLabel = path.basename(destinationRepository.rootUri.fsPath);
   const detailLines = [
@@ -221,13 +261,9 @@ async function syncConfiguredWorktreesToCurrentRepository() {
     ...targets.map((target) => `- ${target}`)
   ];
 
-  if (selection.unmatched.length > 0) {
-    detailLines.push('', `Ignored unmatched entries: ${selection.unmatched.join(', ')}`);
-  }
-
   const confirmationAction = `Sync to ${sourceBranch}`;
   const confirmation = await vscode.window.showWarningMessage(
-    `Sync ${targets.length} configured worktree(s) => ${destinationLabel} (${sourceBranch})?`,
+    `Sync ${targets.length} worktree(s) => ${destinationLabel} (${sourceBranch})?`,
     {
       modal: true,
       detail: detailLines.join('\n')
@@ -255,7 +291,7 @@ async function syncConfiguredWorktreesToCurrentRepository() {
   await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
-      title: `Syncing configured worktree changes => ${destinationLabel} (${sourceBranch})`,
+      title: `Syncing worktree changes => ${destinationLabel} (${sourceBranch})`,
       cancellable: false
     },
     async (progress) => {
@@ -319,13 +355,8 @@ async function syncConfiguredWorktreesToCurrentRepository() {
     return;
   }
 
-  const unmatchedSuffix =
-    selection.unmatched.length > 0
-      ? ` Ignored ${selection.unmatched.length} unmatched setting entr${selection.unmatched.length === 1 ? 'y' : 'ies'}.`
-      : '';
-
   await vscode.window.showInformationMessage(
-    `Synced ${syncedCount} configured worktree(s) => ${destinationLabel} (${sourceBranch}).${unmatchedSuffix}`
+    `Synced ${syncedCount} worktree(s) => ${destinationLabel} (${sourceBranch}).`
   );
 }
 
@@ -343,7 +374,7 @@ async function syncConfiguredWorktreesFromMain() {
     return;
   }
 
-  const { destinationRepository, mainRoot, sourceBranch } = await resolveMainWorktreeRepository(
+  const { destinationRepository, mainRoot, sourceBranch, worktrees } = await resolveMainWorktreeRepository(
     git,
     selectedRepository
   );
@@ -351,9 +382,10 @@ async function syncConfiguredWorktreesFromMain() {
   await rebaseConfiguredWorktreesOntoCurrentMainBranch(destinationRepository, {
     mainRoot,
     sourceBranch,
-    targetPlaceHolder: `Select which configured worktrees should be rebased onto ${sourceBranch}`,
-    confirmationMessage: (count) => `Rebase ${count} configured worktree(s) onto ${sourceBranch}?`,
-    progressTitle: `Syncing configured worktrees from ${sourceBranch} via rebase`,
+    worktrees,
+    targetPlaceHolder: `Select which existing worktrees should be rebased onto ${sourceBranch}`,
+    confirmationMessage: (count) => `Rebase ${count} worktree(s) onto ${sourceBranch}?`,
+    progressTitle: `Syncing worktrees from ${sourceBranch} via rebase`,
     startLogMessage: `Starting batch sync from ${sourceBranch} (${mainRoot}) via rebase`,
     targetLogMessage: (target) => `Rebasing ${target} onto ${sourceBranch}`,
     conflictLogMessage: (target, message) =>
@@ -363,8 +395,7 @@ async function syncConfiguredWorktreesFromMain() {
       `Synced ${count} worktree(s) from ${sourceBranch}. Rebase conflicts were introduced while applying ${path.basename(target)}. Resolve them before running the command again.`,
     failureWarningMessage: (count, failedCount) =>
       `Synced ${count} worktree(s) from ${sourceBranch}; ${failedCount} failed. See the "${OUTPUT_CHANNEL_NAME}" output for details.`,
-    successMessage: (count, unmatchedSuffix) =>
-      `Synced ${count} configured worktree(s) from ${sourceBranch}.${unmatchedSuffix}`
+    successMessage: (count) => `Synced ${count} worktree(s) from ${sourceBranch}.`
   });
 }
 
@@ -382,23 +413,21 @@ async function mergeWorktreesIntoMainWorkdir() {
     return;
   }
 
-  const { destinationRepository, mainRoot, sourceBranch } = await resolveMainWorktreeRepository(
+  const { destinationRepository, mainRoot, sourceBranch, worktrees } = await resolveMainWorktreeRepository(
     git,
     selectedRepository
   );
 
-  const selection = await getConfiguredWorktreeSelection(destinationRepository, {
-    emptyMessage: `Set worktreeTools.migrationTargets in settings before rebasing and syncing into ${destinationRepository.rootUri.fsPath} on ${sourceBranch}.`,
-    noWorktreesMessage: `This worktree set has no linked worktrees to rebase and sync into ${destinationRepository.rootUri.fsPath} on ${sourceBranch}.`,
-    noTargetsMessage: `No configured worktrees resolved to linked worktrees other than the destination ${destinationRepository.rootUri.fsPath} on ${sourceBranch}.`
+  const availableTargets = await getLinkedWorktreeTargetsOrNotify(worktrees, mainRoot, {
+    noTargetsMessage: `This worktree set has no linked worktrees to rebase and sync into ${destinationRepository.rootUri.fsPath} on ${sourceBranch}.`
   });
-  if (!selection) {
+  if (!availableTargets) {
     return;
   }
 
-  const targets = await pickConfiguredWorktreeTargets(
-    selection.targets,
-    `Select which configured worktrees should be rebased onto ${sourceBranch} and synced => main workdir`
+  const targets = await pickExistingWorktreeTargets(
+    availableTargets,
+    `Select which existing worktrees should be rebased onto ${sourceBranch} and synced => main workdir`
   );
   if (!targets) {
     return;
@@ -417,13 +446,8 @@ async function mergeWorktreesIntoMainWorkdir() {
   log(`Main workdir: ${mainRoot}`);
   log(`Combined sync branch: ${sourceBranch}`);
   log(`Combined sync destination repository: ${destinationRepository.rootUri.fsPath}`);
-  log(`Configured targets: ${selection.configuredTargets.join(', ')}`);
-  log(`Resolved targets: ${selection.targets.join(', ')}`);
+  log(`Available targets: ${availableTargets.join(', ')}`);
   log(`Selected targets: ${targets.join(', ')}`);
-
-  if (selection.unmatched.length > 0) {
-    log(`Unmatched configured targets: ${selection.unmatched.join(', ')}`);
-  }
 
   const detailLines = [
     `Main workdir: ${mainRoot}`,
@@ -433,12 +457,8 @@ async function mergeWorktreesIntoMainWorkdir() {
     ...targets.map((target) => `- ${target}`)
   ];
 
-  if (selection.unmatched.length > 0) {
-    detailLines.push('', `Ignored unmatched entries: ${selection.unmatched.join(', ')}`);
-  }
-
   const confirmation = await vscode.window.showWarningMessage(
-    `Rebase ${targets.length} configured worktree(s) onto ${sourceBranch}, then sync them into ${path.basename(destinationRepository.rootUri.fsPath)}?`,
+    `Rebase ${targets.length} worktree(s) onto ${sourceBranch}, then sync them into ${path.basename(destinationRepository.rootUri.fsPath)}?`,
     {
       modal: true,
       detail: detailLines.join('\n')
@@ -547,24 +567,19 @@ async function mergeWorktreesIntoMainWorkdir() {
     return;
   }
 
-  const unmatchedSuffix =
-    selection.unmatched.length > 0
-      ? ` Ignored ${selection.unmatched.length} unmatched setting entr${selection.unmatched.length === 1 ? 'y' : 'ies'}.`
-      : '';
-
   await vscode.window.showInformationMessage(
-    `Rebased onto ${sourceBranch} and synced ${syncedCount} configured worktree(s) into ${path.basename(destinationRepository.rootUri.fsPath)}.${unmatchedSuffix}`
+    `Rebased onto ${sourceBranch} and synced ${syncedCount} worktree(s) into ${path.basename(destinationRepository.rootUri.fsPath)}.`
   );
 }
 
 async function rebaseConfiguredWorktreesOntoCurrentMainBranch(repository, options) {
-  const selection = await getConfiguredWorktreeSelection(repository);
-  if (!selection) {
+  const availableTargets = await getLinkedWorktreeTargetsOrNotify(options.worktrees, options.mainRoot);
+  if (!availableTargets) {
     return;
   }
 
-  const targets = await pickConfiguredWorktreeTargets(
-    selection.targets,
+  const targets = await pickExistingWorktreeTargets(
+    availableTargets,
     options.targetPlaceHolder
   );
   if (!targets) {
@@ -584,13 +599,8 @@ async function rebaseConfiguredWorktreesOntoCurrentMainBranch(repository, option
   log(`Main workdir: ${options.mainRoot}`);
   log(`Sync source branch: ${options.sourceBranch}`);
   log(`Sync repository: ${repository.rootUri.fsPath}`);
-  log(`Configured targets: ${selection.configuredTargets.join(', ')}`);
-  log(`Resolved targets: ${selection.targets.join(', ')}`);
+  log(`Available targets: ${availableTargets.join(', ')}`);
   log(`Selected targets: ${targets.join(', ')}`);
-
-  if (selection.unmatched.length > 0) {
-    log(`Unmatched configured targets: ${selection.unmatched.join(', ')}`);
-  }
 
   const detailLines = [
     `Main workdir: ${options.mainRoot}`,
@@ -599,10 +609,6 @@ async function rebaseConfiguredWorktreesOntoCurrentMainBranch(repository, option
     'Targets:',
     ...targets.map((target) => `- ${target}`)
   ];
-
-  if (selection.unmatched.length > 0) {
-    detailLines.push('', `Ignored unmatched entries: ${selection.unmatched.join(', ')}`);
-  }
 
   const confirmation = await vscode.window.showWarningMessage(
     options.confirmationMessage(targets.length),
@@ -682,12 +688,7 @@ async function rebaseConfiguredWorktreesOntoCurrentMainBranch(repository, option
     return;
   }
 
-  const unmatchedSuffix =
-    selection.unmatched.length > 0
-      ? ` Ignored ${selection.unmatched.length} unmatched setting entr${selection.unmatched.length === 1 ? 'y' : 'ies'}.`
-      : '';
-
-  await vscode.window.showInformationMessage(options.successMessage(syncedCount, unmatchedSuffix));
+  await vscode.window.showInformationMessage(options.successMessage(syncedCount));
 }
 
 async function resolveMainWorktreeRepository(git, repository) {
@@ -795,61 +796,22 @@ function findRepositoryByRootPath(git, repositoryRoot) {
   );
 }
 
-async function getConfiguredWorktreeSelection(repository, messages = {}) {
-  const configuredTargets = getConfiguredTargets(repository);
-  if (configuredTargets.length === 0) {
-    await vscode.window.showWarningMessage(
-      messages.emptyMessage ?? 'Set worktreeTools.migrationTargets in settings before running this command.'
-    );
-    return undefined;
-  }
-
-  const availableWorktrees = getAvailableWorktreePaths(repository);
-  if (availableWorktrees.length === 0) {
-    await vscode.window.showInformationMessage(
-      messages.noWorktreesMessage ?? 'This repository has no linked worktrees.'
-    );
-    return undefined;
-  }
-
-  const resolution = resolveConfiguredTargets(configuredTargets, availableWorktrees, repository.rootUri.fsPath);
-  if (resolution.ambiguous.length > 0) {
-    const detail = resolution.ambiguous
-      .map((entry) => `- ${entry.target}: ${entry.matches.join(', ')}`)
-      .join('\n');
-
-    outputChannel.clear();
-    log('Ambiguous configured worktree targets:');
-    log(detail);
-    outputChannel.show(true);
-
-    await vscode.window.showErrorMessage(
-      'Some configured worktree targets are ambiguous. See the output channel for details.'
-    );
-    return undefined;
-  }
-
-  const currentRoot = normalizeFsPath(repository.rootUri.fsPath);
-  const targets = resolution.matches.filter((target) => target !== currentRoot);
-
+async function getLinkedWorktreeTargetsOrNotify(worktrees, mainRoot, messages = {}) {
+  const targets = getLinkedWorktreeTargets(worktrees, mainRoot);
   if (targets.length === 0) {
     await vscode.window.showInformationMessage(
-      messages.noTargetsMessage ?? 'No configured worktrees resolved to linked worktrees other than the current repository.'
+      messages.noTargetsMessage ?? 'This worktree set has no linked worktrees.'
     );
     return undefined;
   }
 
-  return {
-    configuredTargets,
-    targets,
-    unmatched: resolution.unmatched
-  };
+  return targets;
 }
 
-async function pickConfiguredWorktreeTargets(targets, placeHolder) {
+async function pickExistingWorktreeTargets(targets, placeHolder) {
   const items = [
     {
-      label: 'All configured worktrees',
+      label: ALL_WORKTREES_LABEL,
       description: `${targets.length} worktree(s)`,
       targetPaths: targets
     },
@@ -881,7 +843,7 @@ async function pickConfiguredWorktreeTargets(targets, placeHolder) {
       resolve(value);
     };
 
-    quickPick.title = 'Configured Worktrees';
+    quickPick.title = 'Existing Worktrees';
     quickPick.placeholder = placeHolder;
     quickPick.matchOnDescription = true;
     quickPick.items = items;
@@ -919,6 +881,29 @@ async function promptForWorktreeFolderNames() {
   }
 
   return parseWorktreeFolderNameInput(value).folderNames;
+}
+
+async function pickWorktreeSetupMode(hasLinkedWorktrees) {
+  const items = [
+    {
+      label: 'Initialize',
+      description: 'Enter new folder names',
+      mode: 'initialize'
+    },
+    {
+      label: 'Reinitialize',
+      description: hasLinkedWorktrees ? 'Select existing worktrees' : 'No linked worktrees available',
+      mode: 'reinitialize'
+    }
+  ];
+
+  const picked = await vscode.window.showQuickPick(items, {
+    title: 'Initialize or Reinitialize Worktrees',
+    placeHolder: 'Choose whether to create new worktrees or reset existing ones',
+    ignoreFocusOut: true
+  });
+
+  return picked?.mode;
 }
 
 function validateWorktreeFolderNameInput(input) {
@@ -974,7 +959,12 @@ function validateWorktreeFolderName(folderName) {
   return undefined;
 }
 
-async function planWorktreeSetup(mainRoot, worktreesRoot, sourceBranch, folderNames, worktrees) {
+async function planNewWorktreeInitialization(mainRoot, worktreesRoot, sourceBranch, worktrees) {
+  const folderNames = await promptForWorktreeFolderNames();
+  if (folderNames.length === 0) {
+    return undefined;
+  }
+
   const existingBranches = await listLocalBranches(mainRoot);
   const existingWorktrees = new Map(
     worktrees.map((worktree) => [normalizeFsPath(worktree.path), worktree])
@@ -1007,21 +997,10 @@ async function planWorktreeSetup(mainRoot, worktreesRoot, sourceBranch, folderNa
     }
 
     if (existingWorktree) {
-      const existingWorktreeBranch = parseBranchRef(existingWorktree.branch);
-      if (existingWorktreeBranch !== branchName) {
-        errors.push(
-          `Worktree ${worktreePath} is already linked to branch ${existingWorktreeBranch ?? '(detached HEAD)'}, expected ${branchName} for reinitialize.`
-        );
-        continue;
-      }
-
-      items.push({
-        action: 'reinitialize',
-        folderName,
-        branchName,
-        worktreePath,
-        sourceBranch
-      });
+      const existingWorktreeBranch = parseBranchRef(existingWorktree.branch) ?? '(detached HEAD)';
+      errors.push(
+        `Worktree already exists at ${worktreePath} on branch ${existingWorktreeBranch}. Use reinitialize for existing worktrees.`
+      );
       continue;
     }
 
@@ -1040,6 +1019,41 @@ async function planWorktreeSetup(mainRoot, worktreesRoot, sourceBranch, folderNa
     items.push({
       action: 'initialize',
       folderName,
+      branchName,
+      worktreePath,
+      sourceBranch
+    });
+  }
+
+  return { items, errors };
+}
+
+async function planExistingWorktreeReinitialization(targets, sourceBranch, worktrees) {
+  if (targets.length === 0) {
+    return undefined;
+  }
+
+  const worktreeMap = new Map(worktrees.map((worktree) => [normalizeFsPath(worktree.path), worktree]));
+  const items = [];
+  const errors = [];
+
+  for (const target of targets) {
+    const worktreePath = normalizeFsPath(target);
+    const worktree = worktreeMap.get(worktreePath);
+    if (!worktree) {
+      errors.push(`Worktree is no longer available: ${worktreePath}`);
+      continue;
+    }
+
+    const branchName = parseBranchRef(worktree.branch);
+    if (!branchName) {
+      errors.push(`Cannot reinitialize detached HEAD worktree: ${worktreePath}`);
+      continue;
+    }
+
+    items.push({
+      action: 'reinitialize',
+      folderName: path.basename(worktreePath),
       branchName,
       worktreePath,
       sourceBranch
@@ -1119,32 +1133,40 @@ function formatInitializationActionSummary(initializeCount, reinitializeCount) {
   return capitalize(joinWithAnd(parts));
 }
 
-async function showWorktreeSetupPreview(items, worktreesRoot, sourceBranch) {
+async function showWorktreeSetupPreview(items, placeholder) {
   const initializeItems = items.filter((item) => item.action === 'initialize');
   const reinitializeItems = items.filter((item) => item.action === 'reinitialize');
   const quickPick = vscode.window.createQuickPick();
   quickPick.title = 'Preview Initialize or Reinitialize Worktrees';
-  quickPick.placeholder = `Source branch ${sourceBranch} -> ${worktreesRoot}`;
+  quickPick.placeholder = placeholder;
   quickPick.ignoreFocusOut = true;
   quickPick.items = [
-    {
-      label: 'Initialize',
-      kind: vscode.QuickPickItemKind.Separator
-    },
-    ...initializeItems.map((item) => ({
-      label: item.folderName,
-      description: item.branchName,
-      detail: item.worktreePath
-    })),
-    {
-      label: 'Reinitialize',
-      kind: vscode.QuickPickItemKind.Separator
-    },
-    ...reinitializeItems.map((item) => ({
-      label: item.folderName,
-      description: item.branchName,
-      detail: `${item.worktreePath} - keeps gitignored files`
-    }))
+    ...(initializeItems.length > 0
+      ? [
+          {
+            label: 'Initialize',
+            kind: vscode.QuickPickItemKind.Separator
+          },
+          ...initializeItems.map((item) => ({
+            label: item.folderName,
+            description: item.branchName,
+            detail: item.worktreePath
+          }))
+        ]
+      : []),
+    ...(reinitializeItems.length > 0
+      ? [
+          {
+            label: 'Reinitialize',
+            kind: vscode.QuickPickItemKind.Separator
+          },
+          ...reinitializeItems.map((item) => ({
+            label: item.folderName,
+            description: item.branchName,
+            detail: `${item.worktreePath} - keeps gitignored files`
+          }))
+        ]
+      : [])
   ];
 
   quickPick.buttons = [
@@ -1209,85 +1231,24 @@ function capitalize(value) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-function getConfiguredTargets(repository) {
-  const values = vscode.workspace
-    .getConfiguration(CONFIG_NAMESPACE, repository.rootUri)
-    .get('migrationTargets', []);
-
-  if (!Array.isArray(values)) {
-    return [];
-  }
-
-  return values
-    .filter((value) => typeof value === 'string')
-    .map((value) => value.trim())
-    .filter(Boolean);
+function getManagedWorktreesRoot(mainRoot) {
+  const projectName = path.basename(mainRoot);
+  return normalizeFsPath(path.resolve(mainRoot, '..', `${projectName}.worktrees`));
 }
 
-function getAvailableWorktreePaths(repository) {
-  const worktrees = Array.isArray(repository.state.worktrees) ? repository.state.worktrees : [];
+function getLinkedWorktreeTargets(worktrees, mainRoot) {
+  const normalizedMainRoot = normalizeFsPath(mainRoot);
 
   return worktrees
     .map((worktree) => worktree?.path)
     .filter((worktreePath) => typeof worktreePath === 'string')
-    .map((worktreePath) => normalizeFsPath(worktreePath));
+    .map((worktreePath) => normalizeFsPath(worktreePath))
+    .filter((worktreePath) => worktreePath !== normalizedMainRoot)
+    .sort(compareWorktreePaths);
 }
 
-function resolveConfiguredTargets(configuredTargets, availableWorktrees, repositoryRoot) {
-  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath;
-  const seen = new Set();
-  const matches = [];
-  const unmatched = [];
-  const ambiguous = [];
-
-  for (const target of configuredTargets) {
-    const candidatePaths = new Set();
-
-    if (path.isAbsolute(target)) {
-      candidatePaths.add(normalizeFsPath(target));
-    } else {
-      if (workspaceRoot) {
-        candidatePaths.add(normalizeFsPath(path.resolve(workspaceRoot, target)));
-        candidatePaths.add(normalizeFsPath(path.resolve(path.dirname(workspaceRoot), target)));
-      }
-
-      candidatePaths.add(normalizeFsPath(path.resolve(repositoryRoot, target)));
-      candidatePaths.add(normalizeFsPath(path.resolve(path.dirname(repositoryRoot), target)));
-    }
-
-    const directMatch = availableWorktrees.find((worktreePath) => candidatePaths.has(worktreePath));
-    if (directMatch) {
-      if (!seen.has(directMatch)) {
-        seen.add(directMatch);
-        matches.push(directMatch);
-      }
-      continue;
-    }
-
-    if (!target.includes('/') && !target.includes('\\')) {
-      const basenameMatches = availableWorktrees.filter((worktreePath) => path.basename(worktreePath) === target);
-      if (basenameMatches.length === 1) {
-        const match = basenameMatches[0];
-        if (!seen.has(match)) {
-          seen.add(match);
-          matches.push(match);
-        }
-        continue;
-      }
-
-      if (basenameMatches.length > 1) {
-        ambiguous.push({
-          target,
-          matches: basenameMatches
-        });
-        continue;
-      }
-    }
-
-    unmatched.push(target);
-  }
-
-  return { matches, unmatched, ambiguous };
+function compareWorktreePaths(left, right) {
+  return path.basename(left).localeCompare(path.basename(right)) || left.localeCompare(right);
 }
 
 function normalizeFsPath(value) {

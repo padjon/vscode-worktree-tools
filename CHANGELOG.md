@@ -1,5 +1,11 @@
 # Change Log
 
+## Unreleased
+
+- Let every command except pure initialize target one linked worktree or `All worktrees`, with `All worktrees` listed first
+- Change reinitialize to reuse that existing-worktree selection flow instead of folder-name entry
+- Remove the `worktreeTools.migrationTargets` setting and always use the current worktree set's linked worktrees, with the main workdir as the implicit migration target
+
 ## 0.4.0
 
 - Add `Worktree: Initialize or Reinitialize Worktrees` to create sibling worktrees from the main workdir's current branch
