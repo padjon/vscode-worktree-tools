@@ -2,7 +2,7 @@
   "name": "vscode-worktree-tools",
   "displayName": "Worktree Tools",
   "description": "Utilities for Git worktree workflows in VS Code, including initialization and main-workdir sync for linked worktrees.",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "publisher": "padjon",
   "license": "MIT",
   "engines": {

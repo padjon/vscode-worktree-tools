@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.1
+
 - Let every command except pure initialize target one linked worktree or `All worktrees`, with `All worktrees` listed first
 - Change reinitialize to reuse that existing-worktree selection flow instead of folder-name entry
 - Remove the `worktreeTools.migrationTargets` setting and always use the current worktree set's linked worktrees, with the main workdir as the implicit migration target
